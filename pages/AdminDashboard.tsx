@@ -1,13 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Sermon, AdminView } from '../types';
-import { getSermons, saveSermon, deleteSermon, importSermons } from '../services/storage';
+import { subscribeToSermons, saveSermon, deleteSermon, importSermons } from '../services/storage';
 import { ChevronLeft } from '../components/Icons';
 
-interface AdminDashboardProps {
-  onDataChange: () => void;
-}
-
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ onDataChange }) => {
+const AdminDashboard: React.FC = () => {
   const [view, setView] = useState<AdminView>(AdminView.LOGIN);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -47,43 +43,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onDataChange }) => {
     );
   }
 
-  return <AdminManager setView={setView} view={view} onDataChange={onDataChange} />;
+  return <AdminManager setView={setView} view={view} />;
 };
 
-const AdminManager: React.FC<{ setView: (v: AdminView) => void, view: AdminView, onDataChange: () => void }> = ({ setView, view, onDataChange }) => {
-  const [sermons, setSermons] = useState<Sermon[]>(getSermons());
+const AdminManager: React.FC<{ setView: (v: AdminView) => void, view: AdminView }> = ({ setView, view }) => {
+  const [sermons, setSermons] = useState<Sermon[]>([]);
   const [editingSermon, setEditingSermon] = useState<Sermon | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const refreshList = () => {
-    setSermons(getSermons());
-    onDataChange();
-  };
+  useEffect(() => {
+    // Subscribe to changes (Real-time updates)
+    const unsubscribe = subscribeToSermons(setSermons);
+    return () => unsubscribe();
+  }, []);
 
   const handleEdit = (sermon: Sermon) => {
     setEditingSermon(sermon);
     setView(AdminView.EDIT);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (deleteConfirmId === id) {
-      deleteSermon(id);
-      refreshList();
-      setDeleteConfirmId(null);
+      setIsDeleting(true);
+      try {
+        await deleteSermon(id);
+      } catch (e) {
+        alert("Failed to delete sermon");
+      } finally {
+        setIsDeleting(false);
+        setDeleteConfirmId(null);
+      }
     } else {
       setDeleteConfirmId(id);
-      // Reset after 3 seconds if not confirmed
       setTimeout(() => {
         setDeleteConfirmId(prev => prev === id ? null : prev);
       }, 3000);
     }
   };
 
-  const handleSave = (sermon: Sermon) => {
-    saveSermon(sermon);
-    refreshList();
-    setView(AdminView.LIST);
+  const handleSave = async (sermon: Sermon) => {
+    try {
+      await saveSermon(sermon);
+      setView(AdminView.LIST);
+    } catch (e) {
+      alert("Failed to save sermon. Check console.");
+    }
   };
 
   // Export Data
@@ -105,25 +111,23 @@ const AdminManager: React.FC<{ setView: (v: AdminView) => void, view: AdminView,
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const content = event.target?.result as string;
       if (content) {
-        const success = importSermons(content);
+        const success = await importSermons(content);
         if (success) {
           alert("Data restored successfully!");
-          refreshList();
         } else {
           alert("Failed to restore data. Invalid file format.");
         }
       }
     };
     reader.readAsText(file);
-    // Reset input
     e.target.value = '';
   };
 
@@ -134,7 +138,6 @@ const AdminManager: React.FC<{ setView: (v: AdminView) => void, view: AdminView,
           <h2 className="text-2xl font-bold text-slate-900 brand-font uppercase">Manage Sermons</h2>
           
           <div className="flex gap-2">
-            {/* Hidden File Input */}
             <input 
               type="file" 
               ref={fileInputRef}
@@ -188,29 +191,26 @@ const AdminManager: React.FC<{ setView: (v: AdminView) => void, view: AdminView,
                   <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap">
                     <button onClick={() => handleEdit(s)} className="text-sky-600 hover:text-sky-800 font-medium text-sm uppercase">Edit</button>
                     <button 
+                      disabled={isDeleting}
                       onClick={() => handleDelete(s.id)} 
                       className={`font-medium text-sm uppercase transition-all duration-200 ${
                         deleteConfirmId === s.id 
                           ? 'bg-red-500 text-white px-3 py-1.5 rounded-md hover:bg-red-600 shadow-sm' 
                           : 'text-red-600 hover:text-red-800'
-                      }`}
+                      } ${isDeleting ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
-                      {deleteConfirmId === s.id ? 'Sure?' : 'Delete'}
+                      {deleteConfirmId === s.id ? (isDeleting ? '...' : 'Sure?') : 'Delete'}
                     </button>
                   </td>
                 </tr>
               ))}
               {sermons.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-slate-500">No sermons yet. Add one!</td>
+                  <td colSpan={4} className="px-6 py-8 text-center text-slate-500">No sermons found.</td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
-
-        <div className="mt-8 bg-sky-50 border border-sky-100 p-4 rounded-lg text-sm text-sky-900">
-          <strong>Note on Storage:</strong> Please follow the 4-step process below to host MP3s on Open Drive.
         </div>
       </div>
     );
@@ -225,7 +225,7 @@ const AdminManager: React.FC<{ setView: (v: AdminView) => void, view: AdminView,
   );
 };
 
-const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => void, onCancel: () => void }> = ({ initialData, onSave, onCancel }) => {
+const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => Promise<void>, onCancel: () => void }> = ({ initialData, onSave, onCancel }) => {
   const [formData, setFormData] = useState<Partial<Sermon>>(initialData || {
     title: '',
     preacher: 'Rev. David Jenkins',
@@ -236,16 +236,18 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
     audioUrl: '',
     tags: []
   });
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title || !formData.audioUrl) {
       alert("Title and Audio URL are required");
       return;
     }
     
-    onSave({
-      id: initialData?.id || Date.now().toString(),
+    setIsSaving(true);
+    await onSave({
+      id: initialData?.id || Date.now().toString(), // Date.now() is just a placeholder for LocalStorage fallback, Firebase ignores it for new docs
       title: formData.title!,
       preacher: formData.preacher || '',
       series: formData.series || 'Sunday Service',
@@ -256,6 +258,7 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
       tags: formData.tags || [],
       duration: 'Unknown'
     });
+    setIsSaving(false);
   };
 
   return (
@@ -270,7 +273,6 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          
           {/* Main Info */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div>
@@ -337,46 +339,11 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
           <div className="border-t border-slate-100 pt-8 space-y-8">
             <h3 className="text-lg font-bold text-slate-900 brand-font uppercase border-b border-slate-100 pb-2">Upload Process</h3>
             
-            {/* Step 1 */}
             <div className="flex gap-4 items-start">
                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center border border-slate-200">1</div>
                <div className="flex-1">
-                 <h4 className="font-bold text-slate-900 text-sm uppercase mb-1">Check File Size</h4>
-                 <p className="text-sm text-slate-600">Ensure MP3 is smaller than 100MB. If larger, use Audacity to compress.</p>
-               </div>
-            </div>
-
-            {/* Step 2 */}
-            <div className="flex gap-4 items-start">
-               <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center border border-slate-200">2</div>
-               <div className="flex-1">
-                 <h4 className="font-bold text-slate-900 text-sm uppercase mb-1">Upload to Open Drive</h4>
-                 <p className="text-sm text-slate-600 mb-2">Login and upload the sermon file.</p>
-                 <a href="https://www.opendrive.com/files/MTJfMTkzOTExNF9BcTM0MQ" target="_blank" rel="noreferrer" className="text-sky-600 text-sm underline font-medium block mb-2 break-all hover:text-sky-700">
-                    https://www.opendrive.com/files/MTJfMTkzOTExNF9BcTM0MQ
-                 </a>
-                 <div className="bg-slate-50 p-3 rounded border border-slate-200 text-sm text-slate-700 inline-block">
-                    <p className="mb-0.5"><span className="font-semibold text-slate-900">Username:</span> Rhys@Godfirstchurchbarry.com</p>
-                    <p><span className="font-semibold text-slate-900">Password:</span> (Ask Rhys if needed)</p>
-                 </div>
-               </div>
-            </div>
-
-            {/* Step 3 */}
-            <div className="flex gap-4 items-start">
-               <div className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold flex items-center justify-center border border-slate-200">3</div>
-               <div className="flex-1">
-                 <h4 className="font-bold text-slate-900 text-sm uppercase mb-1">Get Direct Link</h4>
-                 <p className="text-sm text-slate-600">Right click on the file in Open Drive, select <strong>'Links'</strong>, then copy the <strong>'Direct Link (streaming)'</strong>.</p>
-               </div>
-            </div>
-
-            {/* Step 4 */}
-            <div className="flex gap-4 items-start">
-               <div className="flex-shrink-0 w-8 h-8 rounded-full bg-sky-100 text-sky-600 font-bold flex items-center justify-center border border-sky-200">4</div>
-               <div className="flex-1">
-                 <h4 className="font-bold text-slate-900 text-sm uppercase mb-1">Enter Details & Save</h4>
-                 <p className="text-sm text-slate-600 mb-2">Fill in the details above, paste the 'Direct Link (streaming)' below, and click Save.</p>
+                 <h4 className="font-bold text-slate-900 text-sm uppercase mb-1">Upload & Link</h4>
+                 <p className="text-sm text-slate-600 mb-2">Upload MP3 to Open Drive, get 'Direct Link', and paste below.</p>
                  <div className="flex gap-2">
                    <input 
                       required
@@ -392,7 +359,13 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
 
           <div className="pt-8 flex items-center justify-end gap-3 border-t border-slate-100 mt-6">
              <button type="button" onClick={onCancel} className="px-4 py-2 text-slate-600 hover:bg-slate-50 rounded-lg">Cancel</button>
-             <button type="submit" className="px-6 py-2 bg-sky-500 text-white font-medium rounded-lg hover:bg-sky-600 shadow-sm uppercase tracking-wide">Save Sermon</button>
+             <button 
+                type="submit" 
+                disabled={isSaving}
+                className={`px-6 py-2 bg-sky-500 text-white font-medium rounded-lg shadow-sm uppercase tracking-wide flex items-center ${isSaving ? 'opacity-70 cursor-not-allowed' : 'hover:bg-sky-600'}`}
+             >
+               {isSaving ? 'Saving...' : 'Save Sermon'}
+             </button>
           </div>
         </form>
       </div>

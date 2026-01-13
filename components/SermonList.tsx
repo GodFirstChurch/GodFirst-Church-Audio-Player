@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sermon } from '../types';
-import { PlayIcon, PauseIcon } from './Icons';
+import { PlayIcon, PauseIcon, ShareIcon } from './Icons';
 
 interface SermonListProps {
   sermons: Sermon[];
@@ -10,6 +10,22 @@ interface SermonListProps {
 }
 
 const SermonList: React.FC<SermonListProps> = ({ sermons, currentSermonId, isPlaying, onPlay }) => {
+  
+  const handleShare = (e: React.MouseEvent, sermon: Sermon) => {
+    e.stopPropagation(); // Prevent playing when clicking share
+    const text = `Listen to "${sermon.title}" by ${sermon.preacher} at GodFirst Church.\n\n${sermon.audioUrl}`;
+    if (navigator.share) {
+      navigator.share({
+        title: sermon.title,
+        text: text,
+        url: window.location.href
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(text);
+      alert('Link copied to clipboard!');
+    }
+  };
+
   if (sermons.length === 0) {
     return (
       <div className="text-center py-12 px-4">
@@ -59,7 +75,18 @@ const SermonList: React.FC<SermonListProps> = ({ sermons, currentSermonId, isPla
                       </h3>
                       <p className="text-sm text-sky-500 font-medium">{sermon.preacher}</p>
                    </div>
-                   <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded">{sermon.date}</span>
+                   <div className="flex flex-col items-end gap-2">
+                     <span className="text-xs font-mono text-slate-400 bg-slate-50 px-2 py-1 rounded">{sermon.date}</span>
+                     
+                     {/* Share Button */}
+                     <button 
+                       onClick={(e) => handleShare(e, sermon)}
+                       className="text-slate-300 hover:text-sky-500 transition-colors p-1"
+                       title="Share Sermon"
+                     >
+                        <ShareIcon className="w-4 h-4" />
+                     </button>
+                   </div>
                 </div>
                 
                 <p className="text-xs text-slate-400 mt-1 font-bold uppercase tracking-wide">{sermon.series}</p>
