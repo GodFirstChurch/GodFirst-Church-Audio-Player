@@ -1,8 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Sermon, AdminView } from '../types';
 import { getSermons, saveSermon, deleteSermon, importSermons } from '../services/storage';
-import { generateSermonMetadata } from '../services/geminiService';
-import { ChevronLeft, SparklesIcon } from '../components/Icons';
+import { ChevronLeft } from '../components/Icons';
 
 interface AdminDashboardProps {
   onDataChange: () => void;
@@ -237,26 +236,6 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
     audioUrl: '',
     tags: []
   });
-  const [isGenerating, setIsGenerating] = useState(false);
-
-  const generateAIContent = async () => {
-    if (!formData.title || !formData.scripture) {
-      alert("Please enter a Title and Scripture first.");
-      return;
-    }
-    setIsGenerating(true);
-    const result = await generateSermonMetadata(
-      formData.title, 
-      formData.scripture, 
-      formData.preacher || 'Unknown'
-    );
-    setFormData(prev => ({
-      ...prev,
-      description: result.summary,
-      tags: result.tags
-    }));
-    setIsGenerating(false);
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,14 +267,6 @@ const SermonForm: React.FC<{ initialData: Sermon | null, onSave: (s: Sermon) => 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 sm:p-8">
         <div className="flex justify-between items-center mb-6">
            <h2 className="text-xl font-bold text-slate-900 brand-font uppercase">{initialData ? 'Edit Sermon' : 'Add New Sermon'}</h2>
-           <button 
-             type="button"
-             onClick={generateAIContent}
-             disabled={isGenerating}
-             className="flex items-center gap-2 text-sm bg-amber-50 text-amber-700 px-3 py-1.5 rounded-lg hover:bg-amber-100 border border-amber-200 transition-colors disabled:opacity-50 font-medium"
-           >
-             {isGenerating ? 'Thinking...' : <><SparklesIcon className="w-4 h-4" /> AI Assist</>}
-           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
