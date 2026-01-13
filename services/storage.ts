@@ -41,14 +41,22 @@ const SEED_DATA: Sermon[] = [
   }
 ];
 
-// Helper to get local data
+// Helper to get local data safely
 const getLocalSermons = (): Sermon[] => {
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DATA));
+      return SEED_DATA;
+    }
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) throw new Error("Data corrupted");
+    return parsed;
+  } catch (e) {
+    console.warn("Local storage corrupted, resetting to seed data", e);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_DATA));
     return SEED_DATA;
   }
-  return JSON.parse(stored);
 };
 
 // --- Public API ---
@@ -142,6 +150,7 @@ export const deleteSermon = async (id: string): Promise<void> => {
     await deleteDoc(doc(db, 'sermons', id));
   } else {
     const sermons = getLocalSermons();
+    // Filter out the sermon with the matching ID
     const filtered = sermons.filter(s => s.id !== id);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
     window.dispatchEvent(new Event('local-sermon-update'));
